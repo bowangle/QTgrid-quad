@@ -1,0 +1,8 @@
+[submodule "extern/numeric-type-quad"]
+	path = extern/numeric-type-quad
+	url = https://github.com/bowangle/numeric-type-quad.git
+	ignore = dirty
+[submodule "extern/json"]
+	path = extern/json
+	url = https://github.com/nlohmann/json.git
+	ignore = dirty

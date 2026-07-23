@@ -1,0 +1,9 @@
+.vscode/
+
+build/*
+
+*.dat
+*.json
+*.txt
+*.tt
+*.log
