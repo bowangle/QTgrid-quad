@@ -34,7 +34,7 @@ void test_one_grid_roudtrip(const char* name, const int nBit) {
         <<"x = " << x <<"; x2 = " << x2 << " -> x3 = " << x3 << "\n";
 
     if constexpr (std::is_same_v<Scalar, double>) {
-        assert(std::abs(double(x2 - x3)) < 1e-6);
+        assert(std::abs(double(x2 - x3)) < 1e-12);
     }
 }
 

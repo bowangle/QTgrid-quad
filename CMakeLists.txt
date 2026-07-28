@@ -24,3 +24,7 @@ target_link_libraries(qtgrid_deps INTERFACE numeric_type_deps)
 add_executable(Test_grid test/test_grid.cpp)
 target_link_libraries(Test_grid PRIVATE qtgrid_deps)
 target_compile_options(Test_grid PRIVATE -Wall -Wextra -Wreorder -Wshadow)
+
+add_executable(Test_multigrid test/test_multigrid.cpp)
+target_link_libraries(Test_multigrid PRIVATE qtgrid_deps)
+target_compile_options(Test_multigrid PRIVATE -Wall -Wextra -Wreorder -Wshadow)
