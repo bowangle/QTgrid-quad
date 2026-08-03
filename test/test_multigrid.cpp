@@ -205,6 +205,53 @@ void test_save_load_roundtrip_multigrid() {
     std::cout << "MultQTGrid save/load roundtrip test PASSED\n";
 }
 
+template <typename Sint>
+void test_dd128_exact_save_load_roundtrip_multigrid()
+{
+    const dd_128 pi_value = pi<dd_128>();
+    const std::vector<dd_128> a = {
+        pi_value / dd_128(8),
+        pi_value / dd_128(7),
+        pi_value / dd_128(6)
+    };
+    const std::vector<dd_128> b = {
+        pi_value / dd_128(4),
+        pi_value / dd_128(3),
+        pi_value / dd_128(2)
+    };
+    const std::vector<int> nBits = {15, 10, 8};
+
+    MultQTGrid<dd_128, Sint> original(a, b, nBits);
+    const std::string filename = "multigrid_dd128_exact_test";
+    original.save_json(filename);
+
+    // Both compatibility files carry the exact dd_128 representation.
+    MultQTGrid<dd_128, Sint> loaded(filename + "_multgrid.json");
+    MultQTGrid<dd_128, Sint> loaded_E(filename + "_multgrid_E.json");
+
+    auto check_exact = [&](const MultQTGrid<dd_128, Sint>& candidate) {
+        assert(candidate.get_dim() == original.get_dim());
+        assert(candidate.get_a() == original.get_a());
+        assert(candidate.get_b() == original.get_b());
+        assert(candidate.get_nBits() == original.get_nBits());
+        assert(candidate.get_N() == original.get_N());
+        assert(candidate.get_dx() == original.get_dx());
+        assert(candidate.get_tensorLen() == original.get_tensorLen());
+        assert(candidate.delta_volume() == original.delta_volume());
+    };
+
+    check_exact(loaded);
+    check_exact(loaded_E);
+
+    // Explicitly verify that every bound exercises the low component.
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        assert(a[i].x[1] != 0.0);
+        assert(b[i].x[1] != 0.0);
+    }
+
+    std::cout << "MultQTGrid dd_128 exact hi/lo roundtrip test PASSED\n";
+}
+
 
 int main() {
 
@@ -221,6 +268,9 @@ int main() {
     test_save_load_roundtrip_multigrid<float128, util::i128>();
     test_save_load_roundtrip_multigrid<dd_128, long long>();
     test_save_load_roundtrip_multigrid<dd_128, util::i128>();
+
+    test_dd128_exact_save_load_roundtrip_multigrid<long long>();
+    test_dd128_exact_save_load_roundtrip_multigrid<util::i128>();
 
     test_multigrid_roundtrip();
 

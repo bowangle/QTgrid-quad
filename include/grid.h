@@ -13,9 +13,46 @@
 #include "type_double_double.h"
 #include "type_float128_boost.h"
 
-struct dd_128;  // fwd decl for lossy JSON double conversion in save_json
-
 using json = nlohmann::json;
+
+namespace qtgrid_json_detail {
+
+inline std::string double_to_exact_string(double value)
+{
+    std::ostringstream oss;
+    oss << std::scientific
+        << std::setprecision(std::numeric_limits<double>::max_digits10)
+        << value;
+    return oss.str();
+}
+
+inline json encode_dd128_exact(const dd_128& value)
+{
+    return {
+        {"hi", double_to_exact_string(value.x[0])},
+        {"lo", double_to_exact_string(value.x[1])}
+    };
+}
+
+inline double parse_exact_double(const json& value)
+{
+    double result;
+    std::istringstream input(value.get<std::string>());
+    input >> result;
+    if (!input) {
+        throw std::runtime_error("Invalid exact double in grid JSON");
+    }
+    return result;
+}
+
+inline dd_128 decode_dd128_exact(const json& value)
+{
+    const double hi = parse_exact_double(value.at("hi"));
+    const double lo = parse_exact_double(value.at("lo"));
+    return dd_128(dd_real(hi, lo));
+}
+
+} // namespace qtgrid_json_detail
 
 // QTGrid supports up to nBits = 126 (limited by Sint width: Sint(1) << nBits
 // must fit in a signed Sint). Scalar must carry enough mantissa bits for the
@@ -120,6 +157,16 @@ public:
         suffix_2 = "_grid_E.json";
         j_2["nBits"] = nBits;
 
+        if constexpr (std::is_same_v<Scalar, dd_128>) {
+            const json exact = {
+                {"a", qtgrid_json_detail::encode_dd128_exact(a)},
+                {"b", qtgrid_json_detail::encode_dd128_exact(b)}
+            };
+            // Keep both legacy representations and add exact dd_128 data.
+            j["dd128_exact"] = exact;
+            j_2["dd128_exact"] = exact;
+        }
+
         std::ofstream file(base + suffix);
         if (!file.is_open())
             throw std::runtime_error("Cannot open file");
@@ -197,6 +244,16 @@ private:
         file >> j;
         int nBits = j.at("nBits").get<int>();
         Scalar a, b;
+
+        if constexpr (std::is_same_v<Scalar, dd_128>) {
+            if (j.contains("dd128_exact")) {
+                const auto& exact = j.at("dd128_exact");
+                a = qtgrid_json_detail::decode_dd128_exact(exact.at("a"));
+                b = qtgrid_json_detail::decode_dd128_exact(exact.at("b"));
+                return {a, b, nBits};
+            }
+        }
+
         if (j["a"].is_string())
         {
             std::istringstream(j.at("a").get<std::string>()) >> a;
@@ -357,6 +414,20 @@ public:
         j_2["b"] = b_exact;
         j_2["nBits"] = nBits;
 
+        if constexpr (std::is_same_v<Scalar, dd_128>) {
+            json exact_a = json::array();
+            json exact_b = json::array();
+            for (int i = 0; i < dim_; ++i) {
+                exact_a.push_back(qtgrid_json_detail::encode_dd128_exact(a[i]));
+                exact_b.push_back(qtgrid_json_detail::encode_dd128_exact(b[i]));
+            }
+
+            const json exact = {{"a", exact_a}, {"b", exact_b}};
+            // Keep both legacy representations and add exact dd_128 data.
+            j["dd128_exact"] = exact;
+            j_2["dd128_exact"] = exact;
+        }
+
         std::ofstream file(base + "_multgrid.json");
         if (!file.is_open())
             throw std::runtime_error("Cannot open file");
@@ -396,6 +467,24 @@ private:
         std::vector<int> nBits = j.at("nBits").get<std::vector<int>>();
         int dim = static_cast<int>(nBits.size());
         std::vector<Scalar> a(dim), b(dim);
+
+        if constexpr (std::is_same_v<Scalar, dd_128>) {
+            if (j.contains("dd128_exact")) {
+                const auto& exact = j.at("dd128_exact");
+                const auto& exact_a = exact.at("a");
+                const auto& exact_b = exact.at("b");
+                if (exact_a.size() != static_cast<std::size_t>(dim) ||
+                    exact_b.size() != static_cast<std::size_t>(dim)) {
+                    throw std::runtime_error("Invalid dd_128 exact multigrid dimensions");
+                }
+
+                for (int i = 0; i < dim; ++i) {
+                    a[i] = qtgrid_json_detail::decode_dd128_exact(exact_a[i]);
+                    b[i] = qtgrid_json_detail::decode_dd128_exact(exact_b[i]);
+                }
+                return {std::move(a), std::move(b), std::move(nBits)};
+            }
+        }
 
         bool a_is_string = j["a"].is_array() && j["a"].size() > 0 && j["a"][0].is_string();
         bool b_is_string = j["b"].is_array() && j["b"].size() > 0 && j["b"][0].is_string();
