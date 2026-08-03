@@ -8,12 +8,106 @@
 #include <sstream>
 #include <iomanip>
 #include <type_traits>
+#include <iostream>
+#include <algorithm>
 #include <nlohmann/json.hpp>
 
 #include "type_double_double.h"
 #include "type_float128_boost.h"
 
 using json = nlohmann::json;
+
+namespace qtgrid_precision_detail {
+
+inline constexpr int guard_bits = 3;
+
+template <typename Scalar>
+bool is_finite(const Scalar& value)
+{
+    using std::isfinite;
+    return static_cast<bool>(isfinite(value));
+}
+
+template <typename Scalar>
+Scalar abs_value(const Scalar& value)
+{
+    using std::abs;
+    return Scalar(abs(value));
+}
+
+template <typename Scalar>
+Scalar power_of_two(const Scalar& value, int exponent)
+{
+    using std::ldexp;
+    return Scalar(ldexp(value, exponent));
+}
+
+template <typename Scalar>
+void warn_if_precision_is_risky(const Scalar& a,
+                                const Scalar& b,
+                                const Scalar& x_ref,
+                                int nBits,
+                                int integer_max_bits,
+                                const Scalar& dx,
+                                const std::string& context)
+{
+    constexpr int scalar_bits = std::numeric_limits<Scalar>::digits;
+
+    const Scalar interval = b - a;
+    const Scalar magnitude = std::max(
+        std::max(abs_value(a), abs_value(b)), abs_value(x_ref));
+    const Scalar required_spacing =
+        power_of_two(magnitude, 1 - scalar_bits + guard_bits);
+
+    int scalar_max_bits = -1;
+    Scalar candidate_spacing = interval;
+    for (int bits = 0; bits <= 126; ++bits) {
+        if (candidate_spacing < required_spacing) break;
+        scalar_max_bits = bits;
+        candidate_spacing /= Scalar(2);
+    }
+    const int recommended_max = std::min(integer_max_bits, scalar_max_bits);
+
+    auto warning = [&](const std::string& reason) {
+        std::cerr << "[" << context << " precision warning] " << reason
+                  << "; nBits=" << nBits
+                  << ", scalar mantissa bits=" << scalar_bits
+                  << ", guard bits=" << guard_bits
+                  << ", recommended max nBits=" << recommended_max
+                  << "\n";
+    };
+
+    if (dx <= Scalar(0)) {
+        warning("dx is zero or negative");
+        return;
+    }
+    if (!is_finite(dx)) {
+        warning("dx is not finite");
+        return;
+    }
+    const Scalar min_normal = Scalar((std::numeric_limits<Scalar>::min)());
+    if (dx < min_normal) {
+        warning("dx is subnormal and no longer has full mantissa precision");
+    }
+    if (dx < required_spacing) {
+        warning("grid spacing is too small for reliable coordinate/index roundtrips");
+    }
+    if (a + dx == a || b - dx == b) {
+        warning("adjacent endpoint coordinates alias in the scalar type");
+    }
+    if (x_ref + dx == x_ref || x_ref - dx == x_ref) {
+        warning("adjacent coordinates alias around x_ref");
+    }
+
+    const Scalar scalar_N = power_of_two(Scalar(1), nBits);
+    const Scalar product_factor = std::max(Scalar(1), interval);
+    const Scalar max_value = Scalar((std::numeric_limits<Scalar>::max)());
+    if (scalar_N > max_value / product_factor) {
+        warning("N or the intermediate product (x-a)*N can overflow");
+    }
+}
+
+} // namespace qtgrid_precision_detail
 
 namespace qtgrid_json_detail {
 
@@ -95,11 +189,46 @@ public:
            Scalar x_ref_)
         : a(a_), b(b_), nBits(nBits_), k_offset(k_offset_), x_ref(x_ref_)
     {
-        if (nBits < 0 || nBits > 126) {
-            throw std::invalid_argument("nBits must be in [0, 126]");
+        if (!qtgrid_precision_detail::is_finite(a) ||
+            !qtgrid_precision_detail::is_finite(b) ||
+            !qtgrid_precision_detail::is_finite(x_ref)) {
+            throw std::invalid_argument("QTGrid: a, b, and x_ref must be finite");
         }
+        if (!(b > a)) {
+            throw std::invalid_argument("QTGrid: require b > a");
+        }
+        const Scalar interval = b - a;
+        if (!qtgrid_precision_detail::is_finite(interval)) {
+            throw std::overflow_error("QTGrid: b-a is not finite");
+        }
+
+        constexpr int integer_max_bits =
+            std::min(126, std::numeric_limits<Sint>::digits - 1);
+        if (nBits < 0 || nBits > integer_max_bits) {
+            throw std::invalid_argument(
+                "QTGrid: nBits must be in [0, "
+                + std::to_string(integer_max_bits)
+                + "] for the selected index type");
+        }
+
         N = Sint(1) << nBits;
-        dx = (b_ - a_) / Scalar(N);
+        dx = interval / Scalar(N);
+
+        qtgrid_precision_detail::warn_if_precision_is_risky(
+            a, b, x_ref, nBits, integer_max_bits, dx, "QTGrid");
+
+        if (k_offset < Sint(0) || k_offset > N) {
+            std::cerr << "[QTGrid precision warning] k_offset is outside [0, N]"
+                      << "; nBits=" << nBits << "\n";
+        }
+
+        const Scalar represented_a = x_ref - Scalar(k_offset) * dx;
+        using std::abs;
+        if (abs(represented_a - a) > abs(dx) / Scalar(2)) {
+            std::cerr << "[QTGrid precision warning] x_ref and k_offset are "
+                         "inconsistent with a and dx; forward and inverse "
+                         "coordinate mappings may disagree\n";
+        }
     }
 
     QTGrid(const std::string& filename)
@@ -162,7 +291,6 @@ public:
                 {"a", qtgrid_json_detail::encode_dd128_exact(a)},
                 {"b", qtgrid_json_detail::encode_dd128_exact(b)}
             };
-            // Keep both legacy representations and add exact dd_128 data.
             j["dd128_exact"] = exact;
             j_2["dd128_exact"] = exact;
         }
@@ -184,21 +312,31 @@ public:
     void update_padding_1h_bit() {
         // Increase range by 1 high bit: a and dx unchanged,
         // b doubles the interval, nBits and N increase.
-        if (nBits + 1 > 126)
-            throw std::overflow_error("update_padding_1h_bit: nBits would exceed 126");
+        constexpr int integer_max_bits =
+            std::min(126, std::numeric_limits<Sint>::digits - 1);
+        if (nBits + 1 > integer_max_bits)
+            throw std::overflow_error(
+                "update_padding_1h_bit: nBits would exceed the index-type limit");
         b = b + (b - a);
         nBits = nBits + 1;
         N = Sint(1) << nBits;
+        qtgrid_precision_detail::warn_if_precision_is_risky(
+            a, b, x_ref, nBits, integer_max_bits, dx, "QTGrid");
     }
 
     void update_padding_1l_bit() {
         // Increase resolution by 1 low bit: a and b unchanged,
         // dx halves, nBits and N increase.
-        if (nBits + 1 > 126)
-            throw std::overflow_error("update_padding_1l_bit: nBits would exceed 126");
+        constexpr int integer_max_bits =
+            std::min(126, std::numeric_limits<Sint>::digits - 1);
+        if (nBits + 1 > integer_max_bits)
+            throw std::overflow_error(
+                "update_padding_1l_bit: nBits would exceed the index-type limit");
         nBits = nBits + 1;
         N = Sint(1) << nBits;
         dx = (b - a) / Scalar(N);
+        qtgrid_precision_detail::warn_if_precision_is_risky(
+            a, b, x_ref, nBits, integer_max_bits, dx, "QTGrid");
     }
 
     QTGrid build_dual_grid(bool centered = true) const {
@@ -329,14 +467,46 @@ public:
         tensorLen_ = 0;
         deltaVolume_ = Scalar(1);
 
+        constexpr int integer_max_bits =
+            std::min(126, std::numeric_limits<Sint>::digits - 1);
+
         for (int i = 0; i < dim_; ++i) {
-            if (nBits[i] < 0 || nBits[i] > 126)
-                throw std::invalid_argument("nBits[" + std::to_string(i) + "] must be in [0, 126]");
+            if (!qtgrid_precision_detail::is_finite(a[i]) ||
+                !qtgrid_precision_detail::is_finite(b[i])) {
+                throw std::invalid_argument(
+                    "MultQTGrid: a and b must be finite in dimension "
+                    + std::to_string(i));
+            }
+            if (!(b[i] > a[i])) {
+                throw std::invalid_argument(
+                    "MultQTGrid: require b > a in dimension "
+                    + std::to_string(i));
+            }
+            const Scalar interval = b[i] - a[i];
+            if (!qtgrid_precision_detail::is_finite(interval)) {
+                throw std::overflow_error(
+                    "MultQTGrid: b-a is not finite in dimension "
+                    + std::to_string(i));
+            }
+            if (nBits[i] < 0 || nBits[i] > integer_max_bits) {
+                throw std::invalid_argument(
+                    "nBits[" + std::to_string(i) + "] must be in [0, "
+                    + std::to_string(integer_max_bits)
+                    + "] for the selected index type");
+            }
+            if (nBits[i] > std::numeric_limits<int>::max() - tensorLen_) {
+                throw std::overflow_error("MultQTGrid: tensorLen overflow");
+            }
+
             N[i] = Sint(1) << nBits[i];
-            dx[i] = (b[i] - a[i]) / Scalar(N[i]);
+            dx[i] = interval / Scalar(N[i]);
             deltaVolume_ *= dx[i];
             bitOffsets[i] = tensorLen_;
             tensorLen_ += nBits[i];
+
+            qtgrid_precision_detail::warn_if_precision_is_risky(
+                a[i], b[i], a[i], nBits[i], integer_max_bits, dx[i],
+                "MultQTGrid dimension " + std::to_string(i));
         }
         bitOffsets[dim_] = tensorLen_;
     }
@@ -423,7 +593,6 @@ public:
             }
 
             const json exact = {{"a", exact_a}, {"b", exact_b}};
-            // Keep both legacy representations and add exact dd_128 data.
             j["dd128_exact"] = exact;
             j_2["dd128_exact"] = exact;
         }
