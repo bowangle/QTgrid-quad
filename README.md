@@ -36,7 +36,12 @@ Scripts work from any working directory and preserve the build cache. The build
 is in `TN-library/QTgrid-quad/build/`, and the test log is `build/test-output.txt`
 inside that project. Each test run replaces the log; failures return a nonzero
 exit status. JSON roundtrip files are isolated under `build/test-output/`.
-Assertions remain active for tests in Release builds.
+The build script uses the original Release flags `-O3 -march=native` rather
+than CMake's default `-O3 -DNDEBUG`. Tests additionally use
+`-Wall -Wextra -Wreorder -Wshadow -UNDEBUG`, keeping assertions active.
+Library objects use `-fPIC` so they can be linked into shared libraries or Python
+extensions. `-march=native` targets the build machine's CPU, so these binaries
+may not run on machines with older CPUs.
 
 `BUILD_DIR` overrides the build directory, `BUILD_JOBS` controls parallelism,
 and `INSTALL_PREFIX` overrides the install script's destination. No `sudo` is

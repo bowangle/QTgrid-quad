@@ -9,5 +9,6 @@ BUILD_DIR="${BUILD_DIR:-$PROJECT_ROOT/build}"
 # ./compile.sh -DCMAKE_PREFIX_PATH=/path/to/install -DQTGRID_BUILD_TESTS=OFF
 cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_FLAGS_RELEASE="-O3 -march=native" \
     -DCMAKE_PREFIX_PATH="$REPO_ROOT/install" "$@"
 cmake --build "$BUILD_DIR" --parallel "${BUILD_JOBS:-2}"

@@ -29,9 +29,9 @@ if(QTGRID_BUILD_TESTS)
     foreach(name grid multigrid library)
         add_executable(qtgrid_test_${name} test/test_${name}.cpp)
         target_link_libraries(qtgrid_test_${name} PRIVATE qtgrid_quad)
-        # Keep assertions active in Release builds.
+        # Original test warnings, with assertions kept active in Release builds.
         target_compile_options(qtgrid_test_${name} PRIVATE
-            $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-UNDEBUG>)
+            "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wreorder;-Wshadow;-UNDEBUG>")
         file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-output/${name}")
         add_test(NAME qtgrid_${name} COMMAND qtgrid_test_${name})
         set_tests_properties(qtgrid_${name} PROPERTIES
