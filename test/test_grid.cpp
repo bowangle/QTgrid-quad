@@ -2,11 +2,11 @@
 #include <cmath>
 #include <iostream>
 #include <vector>
-#include "type_double_double.h"
-#include "grid.h"
-#include "type_int128.h"
-#include "type_float128_boost.h"
-#include "grid_alias.h"
+#include <numeric-type-quad/type_double_double.h>
+#include <QTgrid-quad/grid.h>
+#include <numeric-type-quad/type_int128.h>
+#include <numeric-type-quad/type_float128_boost.h>
+#include <QTgrid-quad/grid_alias.h>
 
 template <typename Grid>
 void test_one_grid_roudtrip(const char* name, const int nBit) {

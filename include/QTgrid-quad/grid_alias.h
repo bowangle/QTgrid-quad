@@ -1,7 +1,9 @@
-#include <type_double_double.h>
-#include <type_float128_boost.h>
-#include <type_int128.h>
-#include "grid.h"
+#pragma once
+
+#include <numeric-type-quad/type_double_double.h>
+#include <numeric-type-quad/type_float128_boost.h>
+#include <numeric-type-quad/type_int128.h>
+#include <QTgrid-quad/grid.h>
 
 using GridD_LL = QTGrid<double, long long>;
 using GridD_QI = QTGrid<double, util::i128>;

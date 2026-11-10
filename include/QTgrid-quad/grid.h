@@ -12,8 +12,8 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 
-#include "type_double_double.h"
-#include "type_float128_boost.h"
+#include <numeric-type-quad/type_double_double.h>
+#include <numeric-type-quad/type_float128_boost.h>
 
 using json = nlohmann::json;
 
@@ -673,3 +673,34 @@ private:
         return {std::move(a), std::move(b), std::move(nBits)};
     }
 };
+
+// These specializations are provided by libqtgrid_quad. Other type combinations
+// may still be instantiated by consumers from the template definitions above.
+// long and long long are distinct types, even where both are 64-bit; int64_t
+// commonly aliases long on Linux.
+extern template class QTGrid<double, int>;
+extern template class QTGrid<double, long>;
+extern template class QTGrid<double, long long>;
+extern template class QTGrid<double, util::i128>;
+extern template class MultQTGrid<double, int>;
+extern template class MultQTGrid<double, long>;
+extern template class MultQTGrid<double, long long>;
+extern template class MultQTGrid<double, util::i128>;
+
+extern template class QTGrid<dd_128, int>;
+extern template class QTGrid<dd_128, long>;
+extern template class QTGrid<dd_128, long long>;
+extern template class QTGrid<dd_128, util::i128>;
+extern template class MultQTGrid<dd_128, int>;
+extern template class MultQTGrid<dd_128, long>;
+extern template class MultQTGrid<dd_128, long long>;
+extern template class MultQTGrid<dd_128, util::i128>;
+
+extern template class QTGrid<float128, int>;
+extern template class QTGrid<float128, long>;
+extern template class QTGrid<float128, long long>;
+extern template class QTGrid<float128, util::i128>;
+extern template class MultQTGrid<float128, int>;
+extern template class MultQTGrid<float128, long>;
+extern template class MultQTGrid<float128, long long>;
+extern template class MultQTGrid<float128, util::i128>;

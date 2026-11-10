@@ -1,18 +1,13 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Paths
-PROJECT_ROOT=$(pwd)
-BUILD_DIR="$PROJECT_ROOT/build"
+PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$PROJECT_ROOT/../.." && pwd)"
+BUILD_DIR="${BUILD_DIR:-$PROJECT_ROOT/build}"
 
-# Clean old build
-rm -rf "$BUILD_DIR"
-
-# Configure CMake (out-of-source build)
+# The numeric layer must already be installed. Extra arguments override defaults:
+# ./compile.sh -DCMAKE_PREFIX_PATH=/path/to/install -DQTGRID_BUILD_TESTS=OFF
 cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_CXX_FLAGS_RELEASE="-O3 -march=native"
-
-# Build everything
-cmake --build "$BUILD_DIR" -j 4
-
-cat build/CMakeCache.txt | grep CMAKE_CXX_COMPILER
+    -DCMAKE_PREFIX_PATH="$REPO_ROOT/install" "$@"
+cmake --build "$BUILD_DIR" --parallel "${BUILD_JOBS:-2}"
